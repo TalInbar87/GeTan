@@ -108,15 +108,29 @@ async function dispatch(target){
 let picking=false;
 function askTap(msg){picking=true;setStatus('איפה אתה?',msg,0)}
 
-$('get').addEventListener('click',()=>{
+function searching(){ // 3–5 s "looking for a free Tan nearby"
+  return new Promise(res=>{
+    const dur=3000+Math.random()*2000,t0=performance.now();let dots=0;
+    $('bar').style.transition='none';
+    const tick=setInterval(()=>{
+      const k=Math.min(1,(performance.now()-t0)/dur);dots=(dots+1)%4;
+      setStatus('מחפש תן פנוי בסביבה'+'.'.repeat(dots),'סורק את עבר הירדן',k*100);
+      if(k>=1){clearInterval(tick);$('bar').style.transition='';setStatus('נמצא תן פנוי!','',100);setTimeout(res,600)}
+    },250);
+  });
+}
+function locate(){
+  return new Promise(res=>{
+    if(!navigator.geolocation)return res(null);
+    navigator.geolocation.getCurrentPosition(p=>res([p.coords.latitude,p.coords.longitude]),()=>res(null),{enableHighAccuracy:true,timeout:10000});
+  });
+}
+$('get').addEventListener('click',async()=>{
   if(busy)return;
-  if(!navigator.geolocation){askTap('הקישו על המפה במקום שבו אתם נמצאים');return}
-  setStatus('מאתר מיקום…','אשרו גישה למיקום בדפדפן',0);
-  navigator.geolocation.getCurrentPosition(
-    p=>dispatch([p.coords.latitude,p.coords.longitude]),
-    ()=>askTap('אין גישה למיקום · הקישו על המפה במקום שבו אתם נמצאים'),
-    {enableHighAccuracy:true,timeout:10000}
-  );
+  busy=true;$('get').disabled=true;
+  const [pos]=await Promise.all([locate(),searching()]);
+  busy=false;$('get').disabled=false;
+  if(pos)dispatch(pos);else askTap('אין גישה למיקום · הקישו על המפה במקום שבו אתם נמצאים');
 });
 map.on('click',e=>{if(busy||!picking)return;picking=false;dispatch([e.latlng.lat,e.latlng.lng])});
 $('reset').addEventListener('click',()=>{cancelAnimationFrame(raf);$('reset').hidden=true;$('get').disabled=false;if(you){you.remove();you=null}setStatus('תן זמין','לחצו get ותן יגיע אליכם',0)});
