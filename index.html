@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GeTan</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--tan:#ff5a1f;--tand:#d9400a;--you:#1f6fff;--ink:#1b1d22;--mute:#6b6a66;--bg:#f4efe6;--panel:#fff}
+@media(prefers-color-scheme:dark){:root{--ink:#f1ede4;--mute:#a3a09a;--bg:#14161a;--panel:#1d2026}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.5 Rubik,system-ui,sans-serif}
+body{display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(12px + env(safe-area-inset-top)) 16px 10px}
+h1{margin:0;font-size:clamp(34px,6vw,48px);line-height:1;font-weight:900;letter-spacing:-.02em;direction:ltr}
+h1 span{color:var(--tan)}
+.where{font-size:14px;color:var(--mute)}
+#map{flex:1;min-height:300px;margin:0 12px;border-radius:20px;overflow:hidden;box-shadow:0 10px 30px rgb(0 0 0/.12)}
+.panel{margin:12px;background:var(--panel);border-radius:20px;padding:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;box-shadow:0 6px 20px rgb(0 0 0/.08)}
+.get{appearance:none;border:0;cursor:pointer;background:var(--tan);color:#fff;font:900 30px Rubik,sans-serif;height:80px;min-width:150px;padding:0 30px;border-radius:999px;box-shadow:0 8px 0 var(--tand);transition:transform .08s,box-shadow .08s;direction:ltr}
+.get:active{transform:translateY(6px);box-shadow:0 2px 0 var(--tand)}
+.get:disabled{filter:grayscale(.5) opacity(.7)}
+.status{flex:1;min-width:200px}
+.status b{display:block;font-size:21px;line-height:1.2}
+.status small{color:var(--mute);font-size:15px}
+.bar{height:8px;background:rgb(127 127 127/.2);border-radius:9px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--tan)}
+.reset{appearance:none;border:1px solid rgb(127 127 127/.4);background:transparent;color:var(--ink);font:500 15px Rubik,sans-serif;min-height:44px;padding:0 16px;border-radius:12px;cursor:pointer}
+.tan-photo{position:relative;width:64px;height:64px;border-radius:50%;background:var(--tan);border:4px solid #fff;box-shadow:0 4px 12px rgb(0 0 0/.35);display:grid;place-items:center;overflow:visible}
+.tan-photo img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.tan-photo span{color:#fff;font:900 28px Rubik,sans-serif}
+.tan-photo::after{content:"";position:absolute;bottom:-14px;left:50%;margin-left:-9px;border:9px solid transparent;border-top:12px solid #fff}
+.you-dot{width:22px;height:22px;border-radius:50%;background:var(--you);border:4px solid #fff;box-shadow:0 0 0 8px rgb(31 111 255/.25)}
+@media(max-width:600px){.get{width:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ge<span>Tan</span></h1>
+  <div class="where">שכונת עבר הירדן<br>קרית אונו</div>
+</header>
+<div id="map"></div>
+<div class="panel">
+  <button class="get" id="get">get</button>
+  <div class="status" aria-live="polite">
+    <b id="s1">טן זמין</b>
+    <small id="s2">לחצו get וטן יגיע אליכם</small>
+    <div class="bar"><i id="bar"></i></div>
+  </div>
+  <button class="reset" id="reset" hidden>הזמנה חדשה</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+{
+// approximate centre of עבר הירדן, קרית אונו
+const CENTER=[32.0545,34.8520];
+const TAN_HOME=[32.0545,34.8520];
+
+const map=L.map('map',{zoomControl:false}).setView(CENTER,16);
+L.control.zoom({position:'bottomleft'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);
+
+// Tan's photo: tan.jpg next to this file. Falls back to a "T" if missing.
+const tanIcon=L.divIcon({className:'',iconSize:[64,78],iconAnchor:[32,78],html:
+`<div class="tan-photo"><img src="tan.jpg" alt="טן" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'T'}))"></div>`});
+const youIcon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<div class="you-dot"></div>'});
+
+let tan=L.marker(TAN_HOME,{icon:tanIcon,zIndexOffset:1000}).addTo(map).bindTooltip('טן');
+let you=null,line=null,raf=0,busy=false;
+const $=id=>document.getElementById(id);
+const setStatus=(a,b,p)=>{$('s1').textContent=a;$('s2').textContent=b;if(p!=null)$('bar').style.width=p+'%'};
+
+async function walkingRoute(a,b){
+  try{
+    const u=`https://router.project-osrm.org/route/v1/foot/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`;
+    const r=await fetch(u);const j=await r.json();
+    if(j.routes&&j.routes[0])return{pts:j.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]),m:j.routes[0].distance};
+  }catch(e){}
+  return{pts:[a,b],m:map.distance(a,b)};
+}
+
+async function dispatch(target){
+  busy=true;$('get').disabled=true;
+  if(you)you.setLatLng(target);else you=L.marker(target,{icon:youIcon}).addTo(map);
+  setStatus('מחשב מסלול…','',0);
+  const start=tan.getLatLng();const {pts,m}=await walkingRoute([start.lat,start.lng],target);
+  if(line)line.remove();
+  line=L.polyline(pts,{color:'#ff5a1f',weight:6,dashArray:'2 12',lineCap:'round'}).addTo(map);
+  map.fitBounds(line.getBounds(),{padding:[60,60]});
+  const segs=[];let total=0;
+  for(let i=1;i<pts.length;i++){const d=map.distance(pts[i-1],pts[i]);segs.push(d);total+=d}
+  const metres=Math.round(m),mins=Math.max(1,Math.round(metres/80));
+  const dur=Math.min(12000,Math.max(3000,total*12)),t0=performance.now();
+  setStatus('טן יוצא אליך!',`בערך ${metres} מ׳ · כ־${mins} דק׳ הליכה`,0);
+  const step=now=>{
+    const k=Math.min(1,(now-t0)/dur);let d=k*total,i=0;
+    while(i<segs.length-1&&d>segs[i]){d-=segs[i];i++}
+    const a=pts[i],b=pts[i+1]||a,f=segs[i]?d/segs[i]:1;
+    tan.setLatLng([a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f]);
+    if(k<1){$('s1').textContent=k<.85?'טן בדרך':'טן כמעט שם…';$('s2').textContent=`עוד ${Math.round(metres*(1-k))} מ׳ · ${Math.max(1,Math.ceil(mins*(1-k)))} דק׳`;$('bar').style.width=(k*100)+'%';raf=requestAnimationFrame(step)}
+    else{line.remove();line=null;setStatus('טן הגיע!','הוא מחכה לך בחוץ',100);$('reset').hidden=false;busy=false}
+  };
+  raf=requestAnimationFrame(step);
+}
+
+let picking=false;
+function askTap(msg){picking=true;setStatus('איפה אתה?',msg,0)}
+
+$('get').addEventListener('click',()=>{
+  if(busy)return;
+  if(!navigator.geolocation){askTap('הקישו על המפה במקום שבו אתם נמצאים');return}
+  setStatus('מאתר מיקום…','אשרו גישה למיקום בדפדפן',0);
+  navigator.geolocation.getCurrentPosition(
+    p=>dispatch([p.coords.latitude,p.coords.longitude]),
+    ()=>askTap('אין גישה למיקום · הקישו על המפה במקום שבו אתם נמצאים'),
+    {enableHighAccuracy:true,timeout:10000}
+  );
+});
+map.on('click',e=>{if(busy||!picking)return;picking=false;dispatch([e.latlng.lat,e.latlng.lng])});
+$('reset').addEventListener('click',()=>{cancelAnimationFrame(raf);$('reset').hidden=true;$('get').disabled=false;if(you){you.remove();you=null}setStatus('טן זמין','לחצו get וטן יגיע אליכם',0)});
+}
+</script>
+</body>
+</html>
