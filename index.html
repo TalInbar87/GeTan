@@ -102,7 +102,11 @@ async function dispatch(target){
   busy=true;$('get').disabled=true;
   if(you)you.setLatLng(target);else you=L.marker(target,{icon:youIcon}).addTo(map);
   setStatus('מחשב מסלול…','',0);
-  const start=tan.getLatLng();const {pts,m}=await walkingRoute([start.lat,start.lng],target);
+  // Tan appears at a random spot 250–650 m from you, in a random direction
+  const d=250+Math.random()*400,a=Math.random()*2*Math.PI;
+  const start=L.latLng(target[0]+d*Math.cos(a)/111320,target[1]+d*Math.sin(a)/(111320*Math.cos(target[0]*Math.PI/180)));
+  tan.setLatLng(start);
+  const {pts,m}=await walkingRoute([start.lat,start.lng],target);
   if(line)line.remove();
   line=L.polyline(pts,{color:'#ff5a1f',weight:6,dashArray:'2 12',lineCap:'round'}).addTo(map);
   map.fitBounds(line.getBounds(),{padding:[60,60]});
