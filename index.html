@@ -44,8 +44,8 @@ h1 span{color:var(--tan)}
 <div class="panel">
   <button class="get" id="get">get</button>
   <div class="status" aria-live="polite">
-    <b id="s1">טן זמין</b>
-    <small id="s2">לחצו get וטן יגיע אליכם</small>
+    <b id="s1">תן זמין</b>
+    <small id="s2">לחצו get ותן יגיע אליכם</small>
     <div class="bar"><i id="bar"></i></div>
   </div>
   <button class="reset" id="reset" hidden>הזמנה חדשה</button>
@@ -64,10 +64,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,att
 
 // Tan's photo: tan.jpg next to this file. Falls back to a "T" if missing.
 const tanIcon=L.divIcon({className:'',iconSize:[64,78],iconAnchor:[32,78],html:
-`<div class="tan-photo"><img src="tan.jpg" alt="טן" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'T'}))"></div>`});
+`<div class="tan-photo"><img src="tan.jpg" alt="תן" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'T'}))"></div>`});
 const youIcon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<div class="you-dot"></div>'});
 
-let tan=L.marker(TAN_HOME,{icon:tanIcon,zIndexOffset:1000}).addTo(map).bindTooltip('טן');
+let tan=L.marker(TAN_HOME,{icon:tanIcon,zIndexOffset:1000}).addTo(map).bindTooltip('תן');
 let you=null,line=null,raf=0,busy=false;
 const $=id=>document.getElementById(id);
 const setStatus=(a,b,p)=>{$('s1').textContent=a;$('s2').textContent=b;if(p!=null)$('bar').style.width=p+'%'};
@@ -93,14 +93,14 @@ async function dispatch(target){
   for(let i=1;i<pts.length;i++){const d=map.distance(pts[i-1],pts[i]);segs.push(d);total+=d}
   const metres=Math.round(m),mins=Math.max(1,Math.round(metres/80));
   const dur=Math.min(12000,Math.max(3000,total*12)),t0=performance.now();
-  setStatus('טן יוצא אליך!',`בערך ${metres} מ׳ · כ־${mins} דק׳ הליכה`,0);
+  setStatus('תן יוצא אליך!',`בערך ${metres} מ׳ · כ־${mins} דק׳ הליכה`,0);
   const step=now=>{
     const k=Math.min(1,(now-t0)/dur);let d=k*total,i=0;
     while(i<segs.length-1&&d>segs[i]){d-=segs[i];i++}
     const a=pts[i],b=pts[i+1]||a,f=segs[i]?d/segs[i]:1;
     tan.setLatLng([a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f]);
-    if(k<1){$('s1').textContent=k<.85?'טן בדרך':'טן כמעט שם…';$('s2').textContent=`עוד ${Math.round(metres*(1-k))} מ׳ · ${Math.max(1,Math.ceil(mins*(1-k)))} דק׳`;$('bar').style.width=(k*100)+'%';raf=requestAnimationFrame(step)}
-    else{line.remove();line=null;setStatus('טן הגיע!','הוא מחכה לך בחוץ',100);$('reset').hidden=false;busy=false}
+    if(k<1){$('s1').textContent=k<.85?'תן בדרך':'תן כמעט שם…';$('s2').textContent=`עוד ${Math.round(metres*(1-k))} מ׳ · ${Math.max(1,Math.ceil(mins*(1-k)))} דק׳`;$('bar').style.width=(k*100)+'%';raf=requestAnimationFrame(step)}
+    else{line.remove();line=null;setStatus('תן הגיע!','הוא מחכה לך בחוץ',100);$('reset').hidden=false;busy=false}
   };
   raf=requestAnimationFrame(step);
 }
@@ -119,7 +119,7 @@ $('get').addEventListener('click',()=>{
   );
 });
 map.on('click',e=>{if(busy||!picking)return;picking=false;dispatch([e.latlng.lat,e.latlng.lng])});
-$('reset').addEventListener('click',()=>{cancelAnimationFrame(raf);$('reset').hidden=true;$('get').disabled=false;if(you){you.remove();you=null}setStatus('טן זמין','לחצו get וטן יגיע אליכם',0)});
+$('reset').addEventListener('click',()=>{cancelAnimationFrame(raf);$('reset').hidden=true;$('get').disabled=false;if(you){you.remove();you=null}setStatus('תן זמין','לחצו get ותן יגיע אליכם',0)});
 }
 </script>
 </body>
