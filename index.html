@@ -42,6 +42,13 @@ h1 span{color:var(--tan)}
 .arrived p{margin:0 0 18px;font-size:24px;font-weight:700}
 .arrived button{appearance:none;border:0;background:#fff;color:var(--tand);font:700 18px Rubik,sans-serif;min-height:48px;padding:0 28px;border-radius:999px;cursor:pointer}
 @media(prefers-reduced-motion:reduce){.arrived .card{transition:none}}
+.tan-photo.small{width:42px;height:42px;border-width:3px;animation:pop .35s cubic-bezier(.2,1.6,.4,1)}
+.tan-photo.small::after{bottom:-11px;margin-left:-7px;border-width:7px;border-top-width:9px}
+.tan-photo.chosen{animation:pick .8s ease-in-out;box-shadow:0 0 0 8px rgb(255 90 31/.45),0 4px 12px rgb(0 0 0/.35)}
+.leaflet-marker-icon{transition:opacity .4s}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+@keyframes pick{0%,100%{transform:scale(1)}50%{transform:scale(1.45)}}
+@media(prefers-reduced-motion:reduce){.tan-photo.small,.tan-photo.chosen{animation:none}}
 </style>
 </head>
 <body>
@@ -82,6 +89,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,att
 // Tan's photo: tan.jpg next to this file. Falls back to a "T" if missing.
 const tanIcon=L.divIcon({className:'',iconSize:[64,78],iconAnchor:[32,78],html:
 `<div class="tan-photo"><img src="tan.jpg" alt="תן" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'T'}))"></div>`});
+const smallIcon=()=>L.divIcon({className:'',iconSize:[42,53],iconAnchor:[21,53],html:
+`<div class="tan-photo small"><img src="tan.jpg" alt="תן"></div>`});
 const youIcon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,11],html:'<div class="you-dot"></div>'});
 
 let tan=L.marker(TAN_HOME,{icon:tanIcon,zIndexOffset:1000}).addTo(map).bindTooltip('תן');
@@ -98,14 +107,12 @@ async function walkingRoute(a,b){
   return{pts:[a,b],m:map.distance(a,b)};
 }
 
-async function dispatch(target){
+async function dispatch(target,start){
   busy=true;$('get').disabled=true;
   if(you)you.setLatLng(target);else you=L.marker(target,{icon:youIcon}).addTo(map);
   setStatus('מחשב מסלול…','',0);
-  // Tan appears at a random spot 250–650 m from you, in a random direction
-  const d=250+Math.random()*400,a=Math.random()*2*Math.PI;
-  const start=L.latLng(target[0]+d*Math.cos(a)/111320,target[1]+d*Math.sin(a)/(111320*Math.cos(target[0]*Math.PI/180)));
-  tan.setLatLng(start);
+  if(!start)start=offset(target,250+Math.random()*400,Math.random()*2*Math.PI);
+  tan.setLatLng(start);tan.setOpacity(1);
   const {pts,m}=await walkingRoute([start.lat,start.lng],target);
   if(line)line.remove();
   line=L.polyline(pts,{color:'#ff5a1f',weight:6,dashArray:'2 12',lineCap:'round'}).addTo(map);
@@ -129,31 +136,56 @@ async function dispatch(target){
 let picking=false;
 function askTap(msg){picking=true;setStatus('איפה אתה?',msg,0)}
 
-function searching(){ // 3–5 s "looking for a free Tan nearby"
+const offset=(o,d,a)=>L.latLng(o[0]+d*Math.cos(a)/111320,o[1]+d*Math.sin(a)/(111320*Math.cos(o[0]*Math.PI/180)));
+let cands=[],origin=null;
+function clearCands(){cands.forEach(c=>c.m.remove());cands=[]}
+function searching(){ // 3–5 s: jackals pop up around you, then one is picked automatically
   return new Promise(res=>{
+    clearCands();tan.setOpacity(0);
     const dur=3000+Math.random()*2000,t0=performance.now();let dots=0;
+    const n=5+Math.floor(Math.random()*3),every=(dur*.8)/n;
     $('bar').style.transition='none';
     const tick=setInterval(()=>{
-      const k=Math.min(1,(performance.now()-t0)/dur);dots=(dots+1)%4;
-      setStatus('מחפש תן פנוי בסביבה'+'.'.repeat(dots),'סורק את עבר הירדן',k*100);
-      if(k>=1){clearInterval(tick);$('bar').style.transition='';setStatus('נמצא תן פנוי!','',100);setTimeout(res,600)}
+      const el=performance.now()-t0,k=Math.min(1,el/dur);dots=(dots+1)%4;
+      while(cands.length<n&&cands.length*every<=el){
+        const o=origin||[map.getCenter().lat,map.getCenter().lng],d=200+Math.random()*500,a=Math.random()*2*Math.PI;
+        cands.push({d,a,m:L.marker(offset(o,d,a),{icon:smallIcon(),zIndexOffset:500}).addTo(map)});
+      }
+      setStatus('מחפש תן פנוי בסביבה'+'.'.repeat(dots),`נמצאו ${cands.length} תנים באזור`,k*100);
+      if(k>=1){clearInterval(tick);$('bar').style.transition='';res()}
     },250);
+  });
+}
+function choose(target){ // nearest jackal wins; the rest wander off
+  return new Promise(res=>{
+    if(!cands.length)return res(null);
+    let best=cands[0];cands.forEach(c=>{if(map.distance(c.m.getLatLng(),target)<map.distance(best.m.getLatLng(),target))best=c});
+    cands.forEach(c=>{if(c!==best)c.m.setOpacity(0)});
+    const el=best.m.getElement()&&best.m.getElement().querySelector('.tan-photo');if(el)el.classList.add('chosen');
+    best.m.setZIndexOffset(1500);
+    setStatus('נמצא תן פנוי!',`התן הכי קרוב, במרחק ${Math.round(map.distance(best.m.getLatLng(),target))} מ׳ ממך`,100);
+    setTimeout(()=>{const p=best.m.getLatLng();clearCands();res(p)},1300);
   });
 }
 function locate(){
   return new Promise(res=>{
     if(!navigator.geolocation)return res(null);
-    navigator.geolocation.getCurrentPosition(p=>res([p.coords.latitude,p.coords.longitude]),()=>res(null),{enableHighAccuracy:true,timeout:10000});
+    navigator.geolocation.getCurrentPosition(p=>{
+      origin=[p.coords.latitude,p.coords.longitude];
+      cands.forEach(c=>c.m.setLatLng(offset(origin,c.d,c.a))); // re-centre jackals around you
+      map.setView(origin,16);res(origin);
+    },()=>res(null),{enableHighAccuracy:true,timeout:10000});
   });
 }
 $('get').addEventListener('click',async()=>{
   if(busy)return;
   busy=true;$('get').disabled=true;
+  origin=null;
   const [pos]=await Promise.all([locate(),searching()]);
-  busy=false;$('get').disabled=false;
-  if(pos)dispatch(pos);else askTap('אין גישה למיקום · הקישו על המפה במקום שבו אתם נמצאים');
+  if(pos){const st=await choose(pos);dispatch(pos,st)}
+  else{busy=false;askTap('אין גישה למיקום · הקישו על המפה במקום שבו אתם נמצאים')}
 });
-map.on('click',e=>{if(busy||!picking)return;picking=false;dispatch([e.latlng.lat,e.latlng.lng])});
+map.on('click',async e=>{if(busy||!picking)return;picking=false;busy=true;const t=[e.latlng.lat,e.latlng.lng];const st=await choose(t);dispatch(t,st)});
 $('ok').addEventListener('click',()=>$('arrived').classList.remove('on'));
 $('reset').addEventListener('click',()=>{cancelAnimationFrame(raf);$('reset').hidden=true;$('get').disabled=false;if(you){you.remove();you=null}setStatus('תן זמין','לחצו get ותן יגיע אליכם',0)});
 }
